@@ -1776,6 +1776,43 @@ Integer nvim_buf_set_virtual_text(Buffer buffer,
   return src_id;
 }
 
+/// call a function with buffer as temporary current buffer
+///
+/// This temporarily switches current buffer to "buffer".
+/// If the current window already shows "buffer", the window is not switched
+/// If a window inside the current tabpage (including a float) already shows the
+/// buffer One of these windows will be set as current window temporarily.
+/// Otherwise a temporary scratch window (calleeed the "autocmd window" for
+/// historical reasons) will be used.
+///
+/// This is useful e.g. to call vimL functions that only work with the current
+/// buffer/window currently, like |termopen()|.
+///
+/// @param buffer     Buffer handle, or 0 for current buffer
+/// @param fun        Function to call inside the buffer (currently lua callable
+///                   only)
+/// @param[out] err   Error details, if any
+/// @return     The ns_id that was used
+Object nvim_buf_call(Buffer buffer, LuaRef fun, Error *err)
+  FUNC_API_SINCE(7)
+  FUNC_API_LUA_ONLY
+{
+  buf_T *buf = find_buffer_by_handle(buffer, err);
+  if (!buf) {
+    return NIL;
+  }
+  try_start();
+  aco_save_T aco;
+  aucmd_prepbuf(&aco, (buf_T *)buf);
+
+  Array args = ARRAY_DICT_INIT;
+  Object res = nlua_call_ref(fun, NULL, args, true, err);
+
+  aucmd_restbuf(&aco);
+  try_end(err);
+  return res;
+}
+
 Dictionary nvim__buf_stats(Buffer buffer, Error *err)
 {
   Dictionary rv = ARRAY_DICT_INIT;
@@ -1853,23 +1890,4 @@ static int64_t normalize_index(buf_T *buf, int64_t index, bool *oob)
 static int64_t convert_index(int64_t index)
 {
   return index < 0 ? index - 1 : index;
-}
-
-Object nvim__buf_do(Buffer buffer, LuaRef cb, Error *err)
-  FUNC_API_LUA_ONLY
-{
-  buf_T *buf = find_buffer_by_handle(buffer, err);
-  if (!buf) {
-    return NIL;
-  }
-  try_start();
-  aco_save_T aco;
-  aucmd_prepbuf(&aco, (buf_T *)buf);
-
-  Array args = ARRAY_DICT_INIT;
-  Object res = nlua_call_ref(cb, NULL, args, true, err);
-
-  aucmd_restbuf(&aco);
-  try_end(err);
-  return res;
 }

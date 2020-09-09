@@ -1054,14 +1054,16 @@ Object nlua_call_ref(LuaRef ref, const char *name, Array args,
 {
   lua_State *const lstate = nlua_enter();
   nlua_pushref(lstate, ref);
+  int nargs = (int)args.size;
   if (name != NULL) {
     lua_pushstring(lstate, name);
+    nargs++;
   }
   for (size_t i = 0; i < args.size; i++) {
     nlua_push_Object(lstate, args.items[i], false);
   }
 
-  if (lua_pcall(lstate, (int)args.size+1, retval ? 1 : 0, 0)) {
+  if (lua_pcall(lstate, nargs, retval ? 1 : 0, 0)) {
     // if err is passed, the caller will deal with the error.
     if (err) {
       size_t len;
