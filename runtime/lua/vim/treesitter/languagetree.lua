@@ -24,6 +24,7 @@ function LanguageTree.new(source, lang, opts)
     _source = source,
     _lang = lang,
     _children = {},
+    _child_order = {},
     _regions = {},
     _trees = {},
     _opts = opts,
@@ -40,7 +41,6 @@ function LanguageTree.new(source, lang, opts)
       child_removed = {}
     },
   }, LanguageTree)
-
 
   return self
 end
@@ -164,7 +164,43 @@ function LanguageTree:parse()
   return self._trees, changes
 end
 
--- Invokes the callback for each LanguageTree and it's children recursively
+-- Gets the index of the child language in which it applies.
+function LanguageTree:get_child_index(lang)
+  for i, _lang in ipairs(self._child_order) do
+    if _lang == lang then
+      return i
+    end
+  end
+end
+
+-- Invokes the callback for each direct child language tree.
+-- @param fn The function to invoke. This is invoked with arguments (tree: LanguageTree)
+function LanguageTree:iter_own_children()
+  local child_iter, tbl, index = ipairs(self._child_order)
+
+  function iter()
+    local next_index, lang = child_iter(tbl, index)
+
+    if not next_index then
+      return
+    end
+
+    local child_index = index
+    local child = self._children[lang]
+
+    index = next_index
+
+    if not child then
+      return iter()
+    end
+
+    return child_index, child
+  end
+
+  return iter
+end
+
+-- Invokes the callback for each LanguageTree and it's children recursively.
 -- @param fn The function to invoke. This is invoked with arguments (tree: LanguageTree, lang: string)
 -- @param include_self Whether to include the invoking tree in the results.
 function LanguageTree:for_each_child(fn, include_self)
@@ -172,7 +208,7 @@ function LanguageTree:for_each_child(fn, include_self)
     fn(self, self._lang)
   end
 
-  for _, child in pairs(self._children) do
+  for _, child in self:iter_own_children() do
     child:for_each_child(fn, true)
   end
 end
@@ -186,7 +222,7 @@ function LanguageTree:for_each_tree(fn)
     fn(tree, self)
   end
 
-  for _, child in pairs(self._children) do
+  for _, child in self:iter_own_children() do
     child:for_each_tree(fn)
   end
 end
@@ -200,6 +236,7 @@ function LanguageTree:add_child(lang)
   end
 
   self._children[lang] = LanguageTree.new(self._source, lang, self._opts)
+  table.insert(self._child_order, lang)
 
   self:invalidate()
   self:_do_callback('child_added', self._children[lang])
@@ -213,7 +250,14 @@ function LanguageTree:remove_child(lang)
   local child = self._children[lang]
 
   if child then
+    local child_index = self:get_child_index(child:lang())
+
     self._children[lang] = nil
+
+    if child_index then
+      table.remove(self._child_order, child_index)
+    end
+
     child:destroy()
     self:invalidate()
     self:_do_callback('child_removed', child)
@@ -226,7 +270,7 @@ end
 -- `remove_child` must be called on the parent to remove it.
 function LanguageTree:destroy()
   -- Cleanup here
-  for _, child in ipairs(self._children) do
+  for _, child in self:iter_own_children() do
     child:destroy()
   end
 end
